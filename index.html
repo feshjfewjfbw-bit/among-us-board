@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Доска подозрений · Among Us</title>
+<!-- Единственная внешняя зависимость — шрифт (с кириллицей). Без интернета сработает системный шрифт. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+/* =========================================================
+   1. Базовые переменные и космический фон
+   ========================================================= */
+:root {
+  --bg: #060a18;
+  --panel: rgba(18, 24, 52, 0.82);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --text: #e9ecf8;
+  --muted: #8d96b8;
+  --radius: 16px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --bad: #ff4d7a;
+  --mid: #f2c94c;
+  --good: #9b6dff;
+  --accent: #7df9ff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  min-height: 100vh;
+  font-family: 'Rubik', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(ellipse at 15% 10%, rgba(88, 50, 160, 0.35), transparent 45%),
+    radial-gradient(ellipse at 85% 80%, rgba(20, 90, 160, 0.30), transparent 50%),
+    var(--bg);
+  background-attachment: fixed;
+}
+/* Звёзды: два слоя точек разного размера */
+body::before, body::after {
+  content: "";
+  position: fixed; inset: 0;
+  pointer-events: none; z-index: -1;
+  background-image:
+    radial-gradient(1px 1px at 20px 30px, #fff, transparent),
+    radial-gradient(1px 1px at 120px 80px, #cfd8ff, transparent),
+    radial-gradient(1.5px 1.5px at 60px 150px, #fff, transparent),
+    radial-gradient(1px 1px at 180px 190px, #b9c4ff, transparent),
+    radial-gradient(1px 1px at 240px 40px, #fff, transparent);
+  background-size: 260px 220px;
+  opacity: 0.55;
+}
+body::after {
+  background-size: 410px 370px;
+  background-position: 90px 60px;
+  opacity: 0.35;
+  animation: twinkle 6s ease-in-out infinite alternate;
+}
+@keyframes twinkle { from { opacity: 0.15; } to { opacity: 0.45; } }
+
+/* =========================================================
+   2. Общая сетка приложения
+   ========================================================= */
+.app { max-width: 1520px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(6px);
+  padding: 14px;
+}
+.panel-title {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  margin: 0 0 10px;
+  font-size: 13px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  color: #c9d0ee;
+}
+.hint { font-size: 12px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); }
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr) 300px; gap: 14px; align-items: start; }
+
+/* Шапка */
+.topbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand .logo {
+  width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; font-size: 24px;
+  background: linear-gradient(145deg, #c51111, #6b2fbb); box-shadow: var(--shadow);
+}
+.brand h1 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: .02em; }
+.brand small { color: var(--muted); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Кнопки */
+.btn {
+  font: inherit; font-weight: 600; font-size: 14px;
+  border: 0; border-radius: 12px; padding: 9px 14px; cursor: pointer;
+  color: #fff; background: #27306a; box-shadow: 0 3px 0 rgba(0, 0, 0, .35);
+  transition: transform .1s, filter .15s;
+}
+.btn:hover { filter: brightness(1.15); }
+.btn:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0, 0, 0, .35); }
+.btn.danger { background: #c8243f; }
+.btn.primary { background: #2f6fd6; }
+.btn.ghost { background: transparent; border: 1px solid rgba(255, 255, 255, .22); box-shadow: none; }
+
+/* Поля ввода */
+input, textarea, select {
+  font: inherit; font-size: 14px; color: var(--text);
+  width: 100%; padding: 8px 10px;
+  background: #0b1130; border: 1px solid rgba(255, 255, 255, .14); border-radius: 10px;
+  outline: none; transition: border-color .15s;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+textarea { resize: vertical; }
+
+/* Всё, что можно перетаскивать */
+[data-drag-type] { cursor: grab; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+[data-drag-type]:active { cursor: grabbing; }
+.dragging { opacity: .4; }
+.drop-hover { outline: 3px dashed var(--accent) !important; outline-offset: 3px; transform: scale(1.04); }
+.drag-ghost {
+  position: fixed !important; left: 0; top: 0; margin: 0 !important;
+  pointer-events: none; z-index: 9999; opacity: .92;
+  transform: translate(-50%, -50%) scale(1.08);
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, .6));
+}
+
+/* =========================================================
+   3. Верхняя панель — профессии
+   ========================================================= */
+.roles-list { display: flex; gap: 10px; overflow-x: auto; padding: 4px 2px 8px; scrollbar-width: thin; }
+.role-card {
+  flex: 0 0 auto; width: 98px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 10px 6px; border-radius: 14px; border: 0;
+  font: inherit; color: #fff;
+  background: linear-gradient(160deg, var(--rc), color-mix(in srgb, var(--rc) 55%, #000));
+  box-shadow: 0 4px 0 rgba(0, 0, 0, .35), 0 8px 16px rgba(0, 0, 0, .3);
+  transition: transform .15s;
+}
+.role-card:hover { transform: translateY(-3px); }
+.role-icon {
+  width: 46px; height: 46px; border-radius: 12px; display: grid; place-items: center;
+  font-size: 26px; font-weight: 800; background: rgba(255, 255, 255, .2);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .2);
+}
+.role-name { font-size: 12px; font-weight: 600; text-align: center; line-height: 1.2; text-shadow: 0 1px 2px rgba(0, 0, 0, .55); }
+.role-card.add { background: transparent; border: 2px dashed rgba(255, 255, 255, .28); box-shadow: none; cursor: pointer; color: var(--muted); }
+.role-card.add .role-icon { background: rgba(255, 255, 255, .06); }
+
+/* =========================================================
+   4. Левая колонка — зоны оценки
+   ========================================================= */
+.zones { display: flex; flex-direction: column; gap: 12px; }
+.rating-zone {
+  border-radius: 14px; padding: 12px; color: var(--zt);
+  background: linear-gradient(160deg, var(--z), color-mix(in srgb, var(--z) 62%, #000));
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .35);
+  transition: transform .15s;
+}
+.zone-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.zone-head b { display: block; font-size: 15px; }
+.zone-head small { opacity: .85; font-size: 12px; }
+.zone-sym {
+  flex: 0 0 38px; width: 38px; height: 38px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 26px; font-weight: 800; line-height: 1;
+  background: rgba(255, 255, 255, .9); color: color-mix(in srgb, var(--z) 75%, #000);
+}
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: rgba(255, 255, 255, .24); border: 1px solid rgba(255, 255, 255, .4);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, .2);
+}
+.zone-members { display: flex; flex-wrap: wrap; gap: 6px; min-height: 34px; margin-top: 10px; padding: 7px; border-radius: 10px; background: rgba(0, 0, 0, .2); }
+.zone-empty { font-size: 11px; opacity: .75; align-self: center; }
+.mini { width: 20px; height: 20px; border-radius: 4px; background: var(--c); border: 2px solid rgba(0, 0, 0, .55); }
+.mini.dead { opacity: .35; }
+.clear-chip { margin-top: 12px; justify-content: center; width: 100%; padding: 9px; color: var(--text); background: rgba(255, 255, 255, .06); border-style: dashed; }
+
+/* =========================================================
+   5. Центральное поле — персонажи
+   ========================================================= */
+.board-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 18px 12px; padding: 8px 4px; }
+.token {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 14px 6px 10px; border-radius: 16px;
+  font: inherit; color: var(--text);
+  background: rgba(255, 255, 255, .03); border: 2px solid transparent;
+  transition: background .15s, transform .15s;
+}
+.token:hover, .token:focus-visible { background: rgba(255, 255, 255, .08); outline: none; }
+.avatar-wrap { position: relative; width: 78px; height: 78px; border-radius: 12px; transition: box-shadow .2s; }
+.avatar {
+  width: 100%; height: 100%; border-radius: 12px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--c) 82%, #fff) 0%, var(--c) 45%, color-mix(in srgb, var(--c) 80%, #000) 100%);
+  border: 3px solid rgba(0, 0, 0, .6);
+  box-shadow: inset 0 -6px 0 rgba(0, 0, 0, .18), 0 6px 14px rgba(0, 0, 0, .5);
+  transition: opacity .2s, filter .2s;
+}
+.avatar.add {
+  display: grid; place-items: center; font-size: 30px; color: var(--muted);
+  background: transparent; border: 3px dashed rgba(255, 255, 255, .3); box-shadow: none;
+}
+.add-token { cursor: pointer; }
+.name { font-size: 13px; font-weight: 600; text-align: center; }
+.corpse-line { font-size: 11px; color: #ffb3c2; text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.role-badges { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; min-height: 22px; }
+.rb { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: #fff; background: var(--rc); box-shadow: 0 2px 4px rgba(0, 0, 0, .45); }
+
+/* Оценка: цветное кольцо + подсветка + значок */
+.token.rated { background: color-mix(in srgb, var(--rate) 14%, transparent); border-color: color-mix(in srgb, var(--rate) 45%, transparent); }
+.token.rated .avatar-wrap { box-shadow: 0 0 0 4px #0b0f22, 0 0 0 8px var(--rate), 0 0 26px 4px var(--rate); }
+.rated-bad  { --rate: var(--bad); }
+.rated-mid  { --rate: var(--mid); }
+.rated-good { --rate: var(--good); }
+.rate-badge {
+  position: absolute; top: -8px; left: -8px; z-index: 2;
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 18px; font-weight: 800; line-height: 1; color: #1a1030;
+  background: var(--rate); border: 2px solid #0b0f22;
+}
+
+/* Смерть: полупрозрачность + затемнение + череп */
+.token.dead .avatar { opacity: .35; filter: grayscale(.45) brightness(.6); }
+.token.dead .name { text-decoration: line-through; opacity: .65; }
+.skull { position: absolute; inset: 0; display: grid; place-items: center; font-size: 34px; z-index: 1; filter: drop-shadow(0 2px 3px #000); }
+
+/* Всплывающая карточка при наведении */
+.tip {
+  position: absolute; bottom: calc(100% - 4px); left: 50%; transform: translateX(-50%) translateY(4px);
+  width: 230px; padding: 10px 12px; z-index: 30;
+  font-size: 12px; line-height: 1.45; text-align: left;
+  background: #0e1430; border: 1px solid rgba(255, 255, 255, .16); border-radius: 12px; box-shadow: var(--shadow);
+  opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s;
+}
+.token:hover .tip, .token:focus-visible .tip { opacity: 1; transform: translateX(-50%) translateY(0); }
+body.is-dragging .tip { display: none; }
+
+/* =========================================================
+   6. Правая панель — статистика
+   ========================================================= */
+.summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
+.sum { padding: 8px 4px; border-radius: 10px; text-align: center; background: rgba(255, 255, 255, .05); }
+.sum b { display: block; font-size: 18px; }
+.sum span { font-size: 11px; color: var(--muted); }
+.color-stats { list-style: none; margin: 0 0 16px; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.color-stats li { min-width: 0; display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-radius: 8px; font-size: 13px; background: rgba(255, 255, 255, .03); }
+.color-stats li.zero { opacity: .38; }
+.dot { flex: 0 0 auto; width: 14px; height: 14px; border-radius: 3px; background: var(--c); border: 2px solid rgba(0, 0, 0, .55); }
+.dot.big { width: 46px; height: 46px; border-width: 3px; border-radius: 8px; }
+.cs-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-num { font-weight: 700; }
+.cs-sub { font-size: 10px; color: var(--muted); }
+
+.count-list { list-style: none; margin: 0; padding: 0; }
+.count-row {
+  display: grid; grid-template-columns: 20px minmax(0, 1fr) 26px 46px 26px 26px; gap: 4px; align-items: center;
+  margin-bottom: 6px; padding: 5px; border-radius: 10px; background: rgba(255, 255, 255, .05);
+  transition: transform .15s;
+}
+.count-row input { padding: 6px 8px; font-size: 13px; }
+.cnt-num { text-align: center; padding: 6px 2px !important; -moz-appearance: textfield; }
+.cnt-num::-webkit-outer-spin-button, .cnt-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.handle { display: grid; place-items: center; height: 30px; border-radius: 6px; color: var(--muted); font-size: 16px; background: rgba(255, 255, 255, .06); }
+.mini-btn { font: inherit; height: 28px; border: 0; border-radius: 8px; cursor: pointer; color: var(--text); background: rgba(255, 255, 255, .1); }
+.mini-btn:hover { background: rgba(255, 255, 255, .18); }
+.mini-btn.del:hover { background: #c8243f; }
+.count-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; font-size: 13px; }
+.warn { color: var(--mid); }
+
+/* =========================================================
+   7. Модальные окна и уведомления
+   ========================================================= */
+.modal { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: rgba(3, 5, 15, .72); }
+.modal.hidden { display: none; }
+.modal-card {
+  position: relative; width: min(540px, 100%); max-height: 92vh; overflow: auto;
+  padding: 20px; border-radius: 20px;
+  background: #121937; border: 1px solid rgba(255, 255, 255, .12); box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+  animation: pop .15s ease-out;
+}
+@keyframes pop { from { transform: scale(.96); opacity: 0; } to { transform: none; opacity: 1; } }
+.modal-close { position: absolute; top: 10px; right: 12px; width: 32px; height: 32px; border: 0; border-radius: 50%; font-size: 20px; cursor: pointer; color: var(--text); background: rgba(255, 255, 255, .08); }
+.modal h2 { margin: 0; font-size: 20px; }
+.modal h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: #c9d0ee; }
+.menu-head { display: flex; align-items: center; gap: 14px; padding-right: 30px; }
+.status { font-size: 13px; }
+.is-dead { color: #ff8fa6; }
+.is-alive { color: #7ef0a0; }
+.menu-actions { display: flex; gap: 8px; margin-top: 14px; }
+.corpse { margin: 14px 0 0; padding: 10px 12px 12px; border: 1px solid rgba(255, 255, 255, .12); border-radius: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.corpse legend { padding: 0 6px; font-weight: 700; font-size: 13px; }
+.corpse label, .form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.corpse.inactive { opacity: .55; }
+.rate-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.rate-btn { font: inherit; font-size: 13px; font-weight: 600; padding: 7px 11px; border-radius: 999px; cursor: pointer; color: var(--zt, var(--text)); background: color-mix(in srgb, var(--z, #444) 70%, #000); border: 2px solid transparent; opacity: .7; }
+.rate-btn.on { opacity: 1; border-color: #fff; }
+.rate-btn.none { --z: #3a4270; --zt: #e9ecf8; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.tag { display: inline-flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--rc); }
+.tag button { width: 20px; height: 20px; border: 0; border-radius: 50%; cursor: pointer; color: #fff; background: rgba(0, 0, 0, .3); }
+.muted { color: var(--muted); font-size: 13px; }
+.menu-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+.role-hero { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: 16px; background: linear-gradient(160deg, var(--rc), color-mix(in srgb, var(--rc) 50%, #000)); }
+.role-hero .role-icon { width: 60px; height: 60px; font-size: 34px; }
+.role-desc { line-height: 1.5; }
+.holders { display: flex; flex-wrap: wrap; gap: 8px; }
+.holders .mini { width: 28px; height: 28px; cursor: pointer; }
+.form { display: grid; gap: 10px; margin-top: 14px; }
+.form-row { display: grid; grid-template-columns: 1fr 90px 70px; gap: 8px; }
+.form input[type=color] { padding: 2px; height: 38px; }
+.color-pick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+.color-pick button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px; border: 0; border-radius: 12px; cursor: pointer; font: inherit; font-size: 12px; color: var(--text); background: rgba(255, 255, 255, .05); }
+.color-pick button:hover { background: rgba(255, 255, 255, .12); }
+.color-pick .dot { width: 34px; height: 34px; border-radius: 6px; }
+
+.toast {
+  position: fixed; left: 50%; bottom: 22px; z-index: 200; transform: translateX(-50%) translateY(20px);
+  padding: 10px 16px; border-radius: 12px; font-size: 14px;
+  background: #1d2654; border: 1px solid rgba(255, 255, 255, .15); box-shadow: var(--shadow);
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* =========================================================
+   8. Адаптивность
+   ========================================================= */
+@media (max-width: 1180px) {
+  .layout { grid-template-columns: 220px minmax(0, 1fr) 260px; }
+  .board-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (max-width: 960px) {
+  /* На мобильных: зоны идут друг под другом, панель профессий «прилипает» к верху */
+  .layout { grid-template-columns: 1fr; }
+  .roles-bar { position: sticky; top: 0; z-index: 40; }
+  .zones { flex-direction: row; overflow-x: auto; }
+  .rating-zone { flex: 0 0 240px; }
+}
+@media (max-width: 620px) {
+  .app { padding: 10px; gap: 10px; }
+  .brand h1 { font-size: 18px; }
+  .board-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 6px; }
+  .avatar-wrap { width: 62px; height: 62px; }
+  .role-card { width: 82px; }
+  .role-icon { width: 38px; height: 38px; font-size: 22px; }
+  .corpse { grid-template-columns: 1fr; }
+  .form-row { grid-template-columns: 1fr 70px 60px; }
+  .tip { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Шапка -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">🛸</div>
+      <div>
+        <h1>Доска подозрений</h1>
+        <small>Планшет для партии Among Us · всё сохраняется автоматически</small>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="btnClearMarks" type="button">🧹 Новый раунд</button>
+      <button class="btn danger" id="btnReset" type="button">⟲ Сбросить доску</button>
+    </div>
+  </header>
+
+  <!-- Сверху: профессии -->
+  <section class="panel roles-bar">
+    <div class="panel-title">Роли <span class="hint">перетащите на персонажа · клик — описание роли</span></div>
+    <div class="roles-list" id="roles"></div>
+  </section>
+
+  <main class="layout">
+    <!-- Слева: оценки -->
+    <aside class="panel ratings" id="ratings"></aside>
+
+    <!-- По центру: персонажи -->
+    <section class="panel board">
+      <div class="panel-title">Экипаж <span class="hint">клик — меню · перетащите персонажа на другого, чтобы поменять местами</span></div>
+      <div class="board-grid" id="board"></div>
+    </section>
+
+    <!-- Справа: статистика -->
+    <aside class="panel stats">
+      <div class="panel-title">Цвета на доске</div>
+      <div class="summary" id="summary"></div>
+      <ul class="color-stats" id="colorStats"></ul>
+
+      <div class="panel-title">Всего персонажей по профессии <span class="hint">⠿ — тянуть</span></div>
+      <ul class="count-list" id="countList"></ul>
+      <div class="count-foot">
+        <button class="btn ghost" id="btnAddCount" type="button">+ Строка</button>
+        <span id="countTotal"></span>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<!-- Модальное окно (меню персонажа, описание роли, формы) -->
+<div class="modal hidden" id="modal">
+  <div class="modal-card" role="dialog" aria-modal="true">
+    <button class="modal-close" type="button" data-close aria-label="Закрыть">×</button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* =======================================================
+     1. Справочные данные
+     ======================================================= */
+  const STORAGE_KEY = 'amongus-board-v2';
+
+  // 18 цветов, как в игре (меню «Цвета»), с HEX-значениями из игры
+  const COLORS = [
+    { key: 'red',    name: 'Красный',        hex: '#C51111' },
+    { key: 'blue',   name: 'Синий',          hex: '#132ED1' },
+    { key: 'green',  name: 'Зелёный',        hex: '#117F2D' },
+    { key: 'pink',   name: 'Розовый',        hex: '#ED54BA' },
+    { key: 'orange', name: 'Оранжевый',      hex: '#EF7D0D' },
+    { key: 'yellow', name: 'Жёлтый',         hex: '#F5F557' },
+    { key: 'black',  name: 'Чёрный',         hex: '#3F474E' },
+    { key: 'white',  name: 'Белый',          hex: '#D6E0F0' },
+    { key: 'purple', name: 'Фиолетовый',     hex: '#6B2FBB' },
+    { key: 'brown',  name: 'Коричневый',     hex: '#71491E' },
+    { key: 'cyan',   name: 'Голубой',        hex: '#38FEDC' },
+    { key: 'lime',   name: 'Лаймовый',       hex: '#50EF39' },
+    { key: 'maroon', name: 'Бордовый',       hex: '#6B2B3C' },
+    { key: 'rose',   name: 'Светло-розовый', hex: '#ECC0D3' },
+    { key: 'banana', name: 'Банановый',      hex: '#FFFEBE' },
+    { key: 'gray',   name: 'Серый',          hex: '#708496' },
+    { key: 'tan',    name: 'Бежевый',        hex: '#928776' },
+    { key: 'coral',  name: 'Коралловый',     hex: '#EC7578' },
+  ];
+  const COLOR_MAP = Object.fromEntries(COLORS.map(c => [c.key, c]));
+
+  // Роли из «Настроек ролей» лобби: экипаж (голубые) и предатели (красные)
+  const DEFAULT_ROLES = [
+    { id: 'scientist',  name: 'Учёный',          icon: '🧪', color: '#1593c4', desc: 'Экипаж. Носит портативный монитор жизненных показателей и может проверить его в любой момент; заряд пополняется за выполнение заданий.' },
+    { id: 'angel',      name: 'Ангел-хранитель', icon: '😇', color: '#1593c4', desc: 'Экипаж. После смерти становится ангелом и может на время защищать живых игроков от убийства.' },
+    { id: 'engineer',   name: 'Инженер',         icon: '🔧', color: '#1593c4', desc: 'Экипаж. Может прыгать в вентиляцию, но ограниченное время и с перезарядкой.' },
+    { id: 'noisemaker', name: 'Паникёр',         icon: '📢', color: '#1593c4', desc: 'Экипаж. Когда его убивают, всех оповещает сигнал, указывающий на место тела.' },
+    { id: 'tracker',    name: 'Следопыт',        icon: '🧭', color: '#1593c4', desc: 'Экипаж. Помечает игрока и некоторое время видит его положение на карте.' },
+    { id: 'detective',  name: 'Детектив',        icon: '🔍', color: '#1593c4', desc: 'Экипаж. Расследует убийства и получает подсказки о подозреваемых.' },
+    { id: 'judge',      name: 'Судья',           icon: '⚖️', color: '#1593c4', desc: 'Экипаж. Роль из настроек лобби — точную способность уточните в описании роли в игре.' },
+    { id: 'influencer', name: 'Инфлюэнсер',      icon: '📱', color: '#1593c4', desc: 'Экипаж. Роль из настроек лобби — точную способность уточните в описании роли в игре.' },
+    { id: 'impostor',   name: 'Предатель',       icon: '🔪', color: '#d42a2a', desc: 'Предатель без особой роли. Убивает, устраивает саботажи и прячется в вентиляции.' },
+    { id: 'shifter',    name: 'Оборотень',       icon: '🎭', color: '#d42a2a', desc: 'Предатель. Может на время принять облик другого игрока.' },
+    { id: 'phantom',    name: 'Фантом',          icon: '👻', color: '#d42a2a', desc: 'Предатель. Может на время становиться невидимым.' },
+    { id: 'viper',      name: 'Гадюка',          icon: '🐍', color: '#d42a2a', desc: 'Предатель. Тела его жертв постепенно растворяются.' },
+  ];
+
+  // Три зоны оценки. В каждой — несколько перетаскиваемых чипов-формулировок
+  const RATINGS = {
+    bad:  { key: 'bad',  title: 'Подозрительный', sub: 'отрицательный участник',       symbol: '−', color: '#ff4d7a', text: '#ffffff', chips: ['Подозрительный', 'Видели у тела', 'Врёт про задания'] },
+    mid:  { key: 'mid',  title: 'Среднячок',      sub: '«Def, но не до конца»',        symbol: '±', color: '#f2c94c', text: '#2b2100', chips: ['Среднячок', 'Def, но не до конца', 'Был рядом, не уверен'] },
+    good: { key: 'good', title: 'Точно не он',    sub: 'положительный участник',       symbol: '+', color: '#9b6dff', text: '#ffffff', chips: ['Точно не он', 'Визуальное задание', 'Подтверждён'] },
+  };
+
+  const DEFAULT_COUNTS = [['Члены экипажа', 10], ['Предатель', 2], ['Учёный', 1], ['Инженер', 1], ['Детектив', 1]];
+  const CUSTOM_PALETTE = ['#e76f51', '#2a9d8f', '#d4a72c', '#8338ec', '#3a86ff', '#ff006e', '#06a77d', '#5c677d'];
+
+  /* =======================================================
+     2. Состояние и localStorage
+     ======================================================= */
+  const uid = () => Math.random().toString(36).slice(2, 10);
+  const emptyCorpse = () => ({ where: '', killer: '', nearby: '', finder: '' });
+  const newToken = (color) => ({ id: uid(), color, dead: false, corpse: emptyCorpse(), roles: [], rating: null, ratingLabel: '', note: '' });
+
+  function defaultState() {
+    return {
+      tokens: COLORS.map(c => newToken(c.key)),
+      roles: DEFAULT_ROLES.map(r => ({ ...r, custom: false })),
+      counts: DEFAULT_COUNTS.map(([name, count]) => ({ id: uid(), name, count })),
+    };
+  }
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return defaultState();
+      const s = JSON.parse(raw);
+      if (!Array.isArray(s.tokens) || !Array.isArray(s.roles) || !Array.isArray(s.counts)) throw new Error('bad state');
+      // Нормализуем токены, чтобы старые/повреждённые данные не ломали интерфейс
+      s.tokens = s.tokens
+        .filter(t => t && COLOR_MAP[t.color])
+        .map(t => ({ ...newToken(t.color), ...t, corpse: { ...emptyCorpse(), ...(t.corpse || {}) }, roles: Array.isArray(t.roles) ? t.roles : [] }));
+      return s;
+    } catch (e) {
+      console.warn('Не удалось прочитать сохранение, начинаем заново', e);
+      return defaultState();
+    }
+  }
+
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+    catch (e) { toast('⚠️ Не удалось сохранить в localStorage'); }
+  }
+
+  let state = load();
+
+  // Сохранить и полностью перерисовать доску
+  function commit() { save(); renderAll(); }
+
+  /* =======================================================
+     3. Утилиты
+     ======================================================= */
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  const getToken = (id) => state.tokens.find(t => t.id === id);
+  const getRole = (id) => state.roles.find(r => r.id === id);
+
+  const els = {
+    roles: $('#roles'), ratings: $('#ratings'), board: $('#board'),
+    summary: $('#summary'), colorStats: $('#colorStats'), countList: $('#countList'), countTotal: $('#countTotal'),
+    modal: $('#modal'), modalBody: $('#modalBody'), toast: $('#toast'),
+  };
+
+  let toastTimer = null;
+  function toast(msg) {
+    els.toast.textContent = msg;
+    els.toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => els.toast.classList.remove('show'), 1800);
+  }
+
+  /* =======================================================
+     4. Рендеринг
+     ======================================================= */
+  function renderAll() {
+    renderRoles();
+    renderRatings();
+    renderBoard();
+    renderColorStats();
+    renderCounts();
+  }
+
+  // --- Верхняя панель профессий ---
+  function renderRoles() {
+    els.roles.innerHTML = state.roles.map(r => `
+      <div class="role-card" draggable="true" data-drag-type="role" data-drag-id="${esc(r.id)}" data-role-id="${esc(r.id)}"
+           style="--rc:${esc(r.color)}" title="${esc(r.name)}" tabindex="0">
+        <span class="role-icon">${esc(r.icon)}</span>
+        <span class="role-name">${esc(r.name)}</span>
+      </div>`).join('') + `
+      <button class="role-card add" id="btnAddRole" type="button">
+        <span class="role-icon">＋</span><span class="role-name">Своя профессия</span>
+      </button>`;
+  }
+
+  // Маленький кружок персонажа (в зонах оценок и описании ролей)
+  function miniHTML(t) {
+    const c = COLOR_MAP[t.color];
+    return `<span class="mini ${t.dead ? 'dead' : ''}" draggable="true" data-drag-type="token" data-drag-id="${t.id}"
+      data-token-id="${t.id}" style="--c:${c.hex}" title="${esc(c.name)}${t.ratingLabel ? ' — ' + esc(t.ratingLabel) : ''}"></span>`;
+  }
+
+  // --- Левая колонка оценок ---
+  function renderRatings() {
+    const zones = Object.values(RATINGS).map(R => {
+      const members = state.tokens.filter(t => t.rating === R.key);
+      return `
+        <div class="rating-zone" data-drop="rating" data-value="${R.key}" style="--z:${R.color};--zt:${R.text}">
+          <div class="zone-head">
+            <span class="zone-sym">${R.symbol}</span>
+            <div><b>${esc(R.title)}</b><small>${esc(R.sub)}</small></div>
+          </div>
+          <div class="chips">
+            ${R.chips.map(label => `<span class="chip" draggable="true" data-drag-type="rating" data-drag-id="${R.key}|${esc(label)}">${R.symbol} ${esc(label)}</span>`).join('')}
+          </div>
+          <div class="zone-members">
+            ${members.length ? members.map(miniHTML).join('') : '<span class="zone-empty">Бросьте сюда персонажа</span>'}
+          </div>
+        </div>`;
+    }).join('');
+    els.ratings.innerHTML = `
+      <div class="panel-title">Оценки <span class="hint">тяните чип на персонажа</span></div>
+      <div class="zones">${zones}</div>
+      <div class="chip clear-chip" draggable="true" data-drag-type="rating" data-drag-id="none">✕ Снять оценку</div>`;
+  }
+
+  // Содержимое всплывающей карточки при наведении
+  function tipHTML(t) {
+    const lines = [];
+    if (t.dead) {
+      const f = t.corpse;
+      lines.push('<b>💀 Описание трупа</b>');
+      if (f.where)  lines.push(`📍 Где: ${esc(f.where)}`);
+      if (f.killer) lines.push(`🔪 От кого: ${esc(f.killer)}`);
+      if (f.nearby) lines.push(`👀 Рядом: ${esc(f.nearby)}`);
+      if (f.finder) lines.push(`🔦 Нашёл: ${esc(f.finder)}`);
+      if (!f.where && !f.killer && !f.nearby && !f.finder) lines.push('<span class="muted">Не заполнено</span>');
+    }
+    if (t.rating) lines.push(`${RATINGS[t.rating].symbol} ${esc(t.ratingLabel || RATINGS[t.rating].title)}`);
+    if (t.roles.length) lines.push('🎭 ' + t.roles.map(id => getRole(id)).filter(Boolean).map(r => esc(r.name)).join(', '));
+    if (t.note) lines.push('📝 ' + esc(t.note));
+    return lines.length ? `<div class="tip">${lines.map(l => `<div>${l}</div>`).join('')}</div>` : '';
+  }
+
+  // --- Центральное поле персонажей ---
+  function renderBoard() {
+    els.board.innerHTML = state.tokens.map(t => {
+      const c = COLOR_MAP[t.color];
+      const R = t.rating ? RATINGS[t.rating] : null;
+      const badges = t.roles.map(id => getRole(id)).filter(Boolean)
+        .map(r => `<span class="rb" style="--rc:${esc(r.color)}" title="${esc(r.name)}">${esc(r.icon)}</span>`).join('');
+      return `
+        <div class="token ${t.dead ? 'dead' : ''} ${R ? 'rated rated-' + R.key : ''}" tabindex="0"
+             draggable="true" data-drag-type="token" data-drag-id="${t.id}"
+             data-drop="token" data-id="${t.id}" data-token-id="${t.id}" style="--c:${c.hex}"
+             aria-label="${esc(c.name)}${t.dead ? ', мёртв' : ''}">
+          <div class="avatar-wrap">
+            <div class="avatar"></div>
+            ${t.dead ? '<span class="skull">💀</span>' : ''}
+            ${R ? `<span class="rate-badge">${R.symbol}</span>` : ''}
+          </div>
+          <div class="name">${esc(c.name)}</div>
+          ${t.dead && t.corpse.where ? `<div class="corpse-line">📍 ${esc(t.corpse.where)}</div>` : ''}
+          <div class="role-badges">${badges}</div>
+          ${tipHTML(t)}
+        </div>`;
+    }).join('') + `
+      <button class="token add-token" id="addToken" type="button">
+        <div class="avatar-wrap"><div class="avatar add">＋</div></div>
+        <div class="name">Добавить</div>
+      </button>`;
+  }
+
+  // --- Правая панель: количество цветов ---
+  function renderColorStats() {
+    const total = state.tokens.length;
+    const dead = state.tokens.filter(t => t.dead).length;
+    const sus = state.tokens.filter(t => t.rating === 'bad' && !t.dead).length;
+    els.summary.innerHTML = `
+      <div class="sum"><b>${total}</b><span>на доске</span></div>
+      <div class="sum"><b>${total - dead}</b><span>живых</span></div>
+      <div class="sum"><b>${dead}</b><span>погибло</span></div>
+      <div class="sum"><b>${sus}</b><span>подозр.</span></div>`;
+    els.colorStats.innerHTML = COLORS.map(c => {
+      const list = state.tokens.filter(t => t.color === c.key);
+      const alive = list.filter(t => !t.dead).length;
+      return `<li class="${list.length ? '' : 'zero'}">
+        <span class="dot" style="--c:${c.hex}"></span>
+        <span class="cs-name">${c.name}</span>
+        ${list.length > 1 || alive < list.length ? `<span class="cs-sub">${alive} жив.</span>` : ''}
+        <span class="cs-num">×${list.length}</span>
+      </li>`;
+    }).join('');
+  }
+
+  // --- Правая панель: редактируемый счётчик профессий ---
+  function renderCounts() {
+    els.countList.innerHTML = state.counts.map(c => `
+      <li class="count-row" data-drop="countRow" data-id="${c.id}" data-drag-image>
+        <span class="handle" draggable="true" data-drag-type="count" data-drag-id="${c.id}"
+              title="Тяните: поменять порядок или бросить на персонажа">⠿</span>
+        <input class="cnt-name" data-field="name" value="${esc(c.name)}" placeholder="Профессия" />
+        <button type="button" class="mini-btn" data-act="dec" aria-label="Меньше">−</button>
+        <input class="cnt-num" data-field="count" type="number" min="0" inputmode="numeric" value="${c.count}" />
+        <button type="button" class="mini-btn" data-act="inc" aria-label="Больше">+</button>
+        <button type="button" class="mini-btn del" data-act="del" title="Удалить строку">✕</button>
+      </li>`).join('');
+    updateCountTotal();
+  }
+
+  function updateCountTotal() {
+    const sum = state.counts.reduce((a, c) => a + (Number(c.count) || 0), 0);
+    const onBoard = state.tokens.length;
+    els.countTotal.innerHTML = `Итого: <b>${sum}</b>` + (sum !== onBoard ? ` <span class="warn" title="Не совпадает с числом персонажей на доске">≠ ${onBoard}</span>` : ' ✓');
+  }
+
+  /* =======================================================
+     5. Действия над данными
+     ======================================================= */
+  function attachRole(tok, roleId) {
+    const role = getRole(roleId);
+    if (!role) return;
+    if (tok.roles.includes(roleId)) { toast('Эта профессия уже прикреплена'); return; }
+    tok.roles.push(roleId);
+    toast(`${role.icon} ${role.name} → ${COLOR_MAP[tok.color].name}`);
+  }
+
+  // value: 'bad' | 'mid' | 'good' | 'none', опционально с подписью: 'bad|Видели у тела'
+  function applyRating(tok, value) {
+    const [key, label] = String(value).split('|');
+    if (key === 'none' || !RATINGS[key]) {
+      tok.rating = null; tok.ratingLabel = '';
+      toast(`Оценка снята: ${COLOR_MAP[tok.color].name}`);
+    } else {
+      tok.rating = key; tok.ratingLabel = label || RATINGS[key].title;
+      toast(`${RATINGS[key].symbol} ${COLOR_MAP[tok.color].name}: ${tok.ratingLabel}`);
+    }
+  }
+
+  function swapTokens(aId, bId) {
+    const a = state.tokens.findIndex(t => t.id === aId);
+    const b = state.tokens.findIndex(t => t.id === bId);
+    if (a < 0 || b < 0) return;
+    [state.tokens[a], state.tokens[b]] = [state.tokens[b], state.tokens[a]];
+  }
+
+  // Строку счётчика бросили на персонажа — прикрепляем профессию с таким названием (или создаём её)
+  function attachRoleFromCount(tok, countId) {
+    const row = state.counts.find(c => c.id === countId);
+    const name = row && row.name.trim();
+    if (!name) { toast('Сначала впишите название профессии'); return; }
+    let role = state.roles.find(r => r.name.toLowerCase() === name.toLowerCase());
+    if (!role) {
+      role = { id: 'c_' + uid(), name, icon: name[0].toUpperCase(), color: CUSTOM_PALETTE[state.roles.length % CUSTOM_PALETTE.length], desc: 'Создано из счётчика профессий.', custom: true };
+      state.roles.push(role);
+    }
+    attachRole(tok, role.id);
+  }
+
+  function moveCount(fromId, toId) {
+    const from = state.counts.findIndex(c => c.id === fromId);
+    const origTo = state.counts.findIndex(c => c.id === toId);
+    if (from < 0 || origTo < 0) return;
+    const [row] = state.counts.splice(from, 1);
+    const to = state.counts.findIndex(c => c.id === toId);
+    // Тянем вниз — ставим после цели, вверх — перед ней
+    state.counts.splice(from < origTo ? to + 1 : to, 0, row);
+  }
+
+  /* =======================================================
+     6. Drag & Drop: HTML5 API + эмуляция для тач-экранов
+     Источники помечены data-drag-type / data-drag-id,
+     цели — data-drop. Оба режима используют одни и те же
+     canDrop() и handleDrop().
+     ======================================================= */
+  let dragPayload = null;   // что сейчас тащим: { type, id }
+  let hoverEl = null;       // подсвеченная цель
+  let suppressClick = false; // гасим клик сразу после тач-перетаскивания
+
+  const payloadFrom = (el) => ({ type: el.dataset.dragType, id: el.dataset.dragId });
+
+  function canDrop(p, target) {
+    if (!p || !target) return false;
+    switch (target.dataset.drop) {
+      case 'token':    return ['role', 'rating', 'token', 'count'].includes(p.type) && !(p.type === 'token' && p.id === target.dataset.id);
+      case 'rating':   return p.type === 'token';
+      case 'countRow': return p.type === 'count' && p.id !== target.dataset.id;
+      default:         return false;
+    }
+  }
+
+  function findDropTarget(node) {
+    const t = node && node.closest ? node.closest('[data-drop]') : null;
+    return canDrop(dragPayload, t) ? t : null;
+  }
+
+  function setHover(el) {
+    if (hoverEl === el) return;
+    if (hoverEl) hoverEl.classList.remove('drop-hover');
+    hoverEl = el;
+    if (hoverEl) hoverEl.classList.add('drop-hover');
+  }
+
+  function endDrag() {
+    setHover(null);
+    document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+    document.body.classList.remove('is-dragging');
+    dragPayload = null;
+  }
+
+  function handleDrop(p, target) {
+    const kind = target.dataset.drop;
+    if (kind === 'token') {
+      const tok = getToken(target.dataset.id);
+      if (!tok) return;
+      if (p.type === 'role') attachRole(tok, p.id);
+      else if (p.type === 'rating') applyRating(tok, p.id);
+      else if (p.type === 'token') swapTokens(p.id, tok.id);
+      else if (p.type === 'count') attachRoleFromCount(tok, p.id);
+    } else if (kind === 'rating') {
+      const tok = getToken(p.id);
+      if (tok) applyRating(tok, target.dataset.value);
+    } else if (kind === 'countRow') {
+      moveCount(p.id, target.dataset.id);
+    }
+    commit();
+  }
+
+  // --- HTML5 Drag and Drop (мышь) ---
+  document.addEventListener('dragstart', (e) => {
+    const el = e.target.closest && e.target.closest('[data-drag-type]');
+    if (!el) return;
+    dragPayload = payloadFrom(el);
+    e.dataTransfer.effectAllowed = 'copyMove';
+    e.dataTransfer.setData('text/plain', JSON.stringify(dragPayload));
+    const img = el.closest('[data-drag-image]');
+    if (img && img !== el) e.dataTransfer.setDragImage(img, 20, 20);
+    el.classList.add('dragging');
+    document.body.classList.add('is-dragging');
+  });
+  document.addEventListener('dragover', (e) => {
+    const t = findDropTarget(e.target);
+    if (t) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = dragPayload.type === 'token' || dragPayload.type === 'count' ? 'move' : 'copy';
+    }
+    setHover(t);
+  });
+  document.addEventListener('drop', (e) => {
+    const t = findDropTarget(e.target);
+    if (!t) return;
+    e.preventDefault();
+    const p = dragPayload;
+    endDrag();
+    handleDrop(p, t);
+  });
+  document.addEventListener('dragend', endDrag);
+
+  // --- Тач: удержание ~0.2 с запускает перетаскивание, быстрый свайп — обычная прокрутка ---
+  let touch = null;
+
+  function moveGhost(x, y) {
+    if (!touch || !touch.ghost) return;
+    touch.ghost.style.left = x + 'px';
+    touch.ghost.style.top = y + 'px';
+  }
+
+  function beginTouchDrag() {
+    if (!touch) return;
+    touch.active = true;
+    dragPayload = payloadFrom(touch.el);
+    const src = touch.el.closest('[data-drag-image]') || touch.el;
+    const r = src.getBoundingClientRect();
+    const ghost = src.cloneNode(true);
+    ghost.classList.add('drag-ghost');
+    ghost.style.width = r.width + 'px';
+    ghost.style.height = r.height + 'px';
+    document.body.appendChild(ghost);
+    touch.ghost = ghost;
+    moveGhost(touch.x, touch.y);
+    touch.el.classList.add('dragging');
+    document.body.classList.add('is-dragging');
+    if (navigator.vibrate) navigator.vibrate(12);
+  }
+
+  function cleanupTouch() {
+    if (!touch) return;
+    clearTimeout(touch.timer);
+    if (touch.ghost) touch.ghost.remove();
+    touch = null;
+  }
+
+  // Автопрокрутка, если палец у края экрана (нужно на мобильном, где зоны идут друг под другом)
+  function autoScroll(y) {
+    const edge = 70;
+    if (y < edge) window.scrollBy(0, -14);
+    else if (y > window.innerHeight - edge) window.scrollBy(0, 14);
+  }
+
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) return;
+    const el = e.target.closest && e.target.closest('[data-drag-type]');
+    if (!el) return;
+    const t = e.touches[0];
+    touch = { el, x: t.clientX, y: t.clientY, active: false, ghost: null, target: null };
+    touch.timer = setTimeout(beginTouchDrag, 200);
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!touch) return;
+    const t = e.touches[0];
+    if (!touch.active) {
+      // Палец сдвинулся до старта перетаскивания — это прокрутка
+      if (Math.hypot(t.clientX - touch.x, t.clientY - touch.y) > 10) cleanupTouch();
+      return;
+    }
+    e.preventDefault();
+    touch.x = t.clientX; touch.y = t.clientY;
+    moveGhost(touch.x, touch.y);
+    touch.target = findDropTarget(document.elementFromPoint(touch.x, touch.y));
+    setHover(touch.target);
+    autoScroll(touch.y);
+  }, { passive: false });
+
+  document.addEventListener('touchend', (e) => {
+    if (!touch) return;
+    if (touch.active) {
+      e.preventDefault();
+      const p = dragPayload, target = touch.target;
+      cleanupTouch();
+      endDrag();
+      if (target) handleDrop(p, target);
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 350);
+    } else {
+      cleanupTouch();
+    }
+  }, { passive: false });
+
+  document.addEventListener('touchcancel', () => { cleanupTouch(); endDrag(); });
+
+  /* =======================================================
+     7. Модальные окна
+     ======================================================= */
+  function openModal(html, mount) {
+    // Подменяем тело на новый узел, чтобы не накапливать обработчики событий
+    const fresh = els.modalBody.cloneNode(false);
+    els.modalBody.replaceWith(fresh);
+    els.modalBody = fresh;
+    fresh.innerHTML = html;
+    els.modal.classList.remove('hidden');
+    if (mount) mount(fresh);
+  }
+  function closeModal() {
+    els.modal.classList.add('hidden');
+    els.modalBody.innerHTML = '';
+  }
+  els.modal.addEventListener('click', (e) => {
+    if (e.target === els.modal || e.target.closest('[data-close]')) closeModal();
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+  // --- Меню персонажа: смерть, описание трупа, оценка, профессии, заметка ---
+  function openTokenMenu(id, focusCorpse = false) {
+    const tok = getToken(id);
+    if (!tok) return;
+    const c = COLOR_MAP[tok.color];
+    const f = tok.corpse;
+
+    const roleTags = tok.roles.map(rid => getRole(rid)).filter(Boolean).map(r =>
+      `<span class="tag" style="--rc:${esc(r.color)}">${esc(r.icon)} ${esc(r.name)}
+        <button type="button" data-unrole="${esc(r.id)}" aria-label="Открепить">×</button></span>`).join('')
+      || '<span class="muted">Нет — перетащите профессию на персонажа или выберите ниже</span>';
+    const roleOptions = state.roles.filter(r => !tok.roles.includes(r.id))
+      .map(r => `<option value="${esc(r.id)}">${esc(r.icon)} ${esc(r.name)}</option>`).join('');
+    const rateBtns = Object.values(RATINGS).map(R =>
+      `<button type="button" class="rate-btn ${tok.rating === R.key ? 'on' : ''}" data-rate="${R.key}" style="--z:${R.color};--zt:${R.text}">${R.symbol} ${esc(R.title)}</button>`).join('')
+      + `<button type="button" class="rate-btn none ${!tok.rating ? 'on' : ''}" data-rate="none">✕ Без оценки</button>`;
+
+    openModal(`
+      <div class="menu-head">
+        <span class="dot big" style="--c:${c.hex}"></span>
+        <div>
+          <h2>${esc(c.name)}</h2>
+          <span class="status ${tok.dead ? 'is-dead' : 'is-alive'}">${tok.dead ? '💀 Мёртв' : '❤️ Жив'}</span>
+          ${tok.rating ? `<span class="muted"> · ${RATINGS[tok.rating].symbol} ${esc(tok.ratingLabel)}</span>` : ''}
+        </div>
+      </div>
+      <div class="menu-actions">
+        ${tok.dead
+          ? '<button type="button" class="btn" data-act="revive">↩ Снять статус смерти</button>'
+          : '<button type="button" class="btn danger" data-act="die">💀 Умер</button>'}
+      </div>
+      <fieldset class="corpse ${tok.dead ? '' : 'inactive'}">
+        <legend>Описание трупа</legend>
+        <label>Где умер<input data-corpse="where" value="${esc(f.where)}" placeholder="Электрика, медпункт…" /></label>
+        <label>От кого умер<input data-corpse="killer" value="${esc(f.killer)}" placeholder="Подозреваемый цвет" /></label>
+        <label>Кто был рядом<input data-corpse="nearby" value="${esc(f.nearby)}" placeholder="Цвета через запятую" /></label>
+        <label>Кто нашёл<input data-corpse="finder" value="${esc(f.finder)}" placeholder="Кто зарепортил" /></label>
+      </fieldset>
+      <h3>Оценка</h3>
+      <div class="rate-row">${rateBtns}</div>
+      <h3>Профессии</h3>
+      <div class="tags">${roleTags}</div>
+      ${roleOptions ? `<select data-addrole><option value="">+ Прикрепить профессию…</option>${roleOptions}</select>` : ''}
+      <h3>Заметка</h3>
+      <textarea data-note rows="2" placeholder="Алиби, задания, как голосовал…">${esc(tok.note)}</textarea>
+      <div class="menu-foot">
+        <button type="button" class="btn ghost" data-act="remove">Убрать с доски</button>
+        <button type="button" class="btn primary" data-close>Готово</button>
+      </div>`, (body) => {
+      // Текстовые поля сохраняем на лету, перерисовывая только доску (фокус не теряется)
+      body.addEventListener('input', (e) => {
+        const key = e.target.dataset.corpse;
+        if (key) tok.corpse[key] = e.target.value;
+        else if (e.target.matches('[data-note]')) tok.note = e.target.value;
+        else return;
+        save(); renderBoard();
+      });
+      body.addEventListener('change', (e) => {
+        if (e.target.matches('[data-addrole]') && e.target.value) {
+          attachRole(tok, e.target.value); commit(); openTokenMenu(id);
+        }
+      });
+      body.addEventListener('click', (e) => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        if (b.dataset.act === 'die') { tok.dead = true; commit(); openTokenMenu(id, true); }
+        else if (b.dataset.act === 'revive') { tok.dead = false; commit(); openTokenMenu(id); }
+        else if (b.dataset.act === 'remove') {
+          if (confirm(`Убрать «${c.name}» с доски?`)) {
+            state.tokens = state.tokens.filter(t => t.id !== id); commit(); closeModal();
+          }
+        }
+        else if (b.dataset.rate) { applyRating(tok, b.dataset.rate); commit(); openTokenMenu(id); }
+        else if (b.dataset.unrole) { tok.roles = tok.roles.filter(r => r !== b.dataset.unrole); commit(); openTokenMenu(id); }
+      });
+      if (focusCorpse) $('[data-corpse="where"]', body).focus();
+    });
+  }
+
+  // --- Карточка профессии (клик по роли) ---
+  function openRoleInfo(id) {
+    const r = getRole(id);
+    if (!r) return;
+    const holders = state.tokens.filter(t => t.roles.includes(id));
+    openModal(`
+      <div class="role-hero" style="--rc:${esc(r.color)}">
+        <span class="role-icon">${esc(r.icon)}</span>
+        <div><h2>${esc(r.name)}</h2><span>${r.custom ? 'Своя профессия' : 'Стандартная профессия'}</span></div>
+      </div>
+      <p class="role-desc">${esc(r.desc || 'Описание не задано.')}</p>
+      <p class="muted">Перетащите карточку на персонажа, чтобы закрепить профессию.</p>
+      <h3>Закреплена за</h3>
+      <div class="holders">${holders.length ? holders.map(miniHTML).join('') : '<span class="muted">пока никем</span>'}</div>
+      <div class="menu-foot">
+        <button type="button" class="btn ghost" data-act="delrole">Удалить из панели</button>
+        <button type="button" class="btn primary" data-close>Понятно</button>
+      </div>`, (body) => {
+      body.addEventListener('click', (e) => {
+        const mini = e.target.closest('[data-token-id]');
+        if (mini) { openTokenMenu(mini.dataset.tokenId); return; }
+        if (e.target.closest('[data-act="delrole"]') && confirm(`Удалить профессию «${r.name}»? Она будет откреплена от всех персонажей.`)) {
+          state.roles = state.roles.filter(x => x.id !== id);
+          state.tokens.forEach(t => { t.roles = t.roles.filter(x => x !== id); });
+          commit(); closeModal();
+        }
+      });
+    });
+  }
+
+  // --- Форма «Своя профессия» ---
+  function openAddRole() {
+    const color = CUSTOM_PALETTE[state.roles.length % CUSTOM_PALETTE.length];
+    openModal(`
+      <h2>Новая профессия</h2>
+      <form class="form" id="roleForm">
+        <div class="form-row">
+          <label>Название<input name="name" required maxlength="24" placeholder="Например, Шпион" /></label>
+          <label>Иконка<input name="icon" maxlength="4" placeholder="🕵️" /></label>
+          <label>Цвет<input name="color" type="color" value="${color}" /></label>
+        </div>
+        <label>Описание роли<textarea name="desc" rows="3" placeholder="Что умеет эта роль?"></textarea></label>
+        <div class="menu-foot">
+          <button type="button" class="btn ghost" data-close>Отмена</button>
+          <button type="submit" class="btn primary">Добавить</button>
+        </div>
+      </form>`, (body) => {
+      const form = $('#roleForm', body);
+      form.elements.name.focus();
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const name = form.elements.name.value.trim();
+        if (!name) return;
+        const icon = form.elements.icon.value.trim() || name[0].toUpperCase();
+        state.roles.push({ id: 'c_' + uid(), name, icon, color: form.elements.color.value, desc: form.elements.desc.value.trim(), custom: true });
+        commit(); closeModal(); toast(`Добавлена профессия «${name}»`);
+      });
+    });
+  }
+
+  // --- Добавить персонажа на доску ---
+  function openAddToken() {
+    openModal(`
+      <h2>Добавить персонажа</h2>
+      <p class="muted">Цвета могут повторяться — счётчик справа покажет, сколько раз цвет встречается на доске.</p>
+      <div class="color-pick">
+        ${COLORS.map(c => `<button type="button" data-color="${c.key}"><span class="dot" style="--c:${c.hex}"></span>${c.name}</button>`).join('')}
+      </div>`, (body) => {
+      body.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-color]');
+        if (!b) return;
+        state.tokens.push(newToken(b.dataset.color));
+        commit(); closeModal(); toast(`Добавлен: ${COLOR_MAP[b.dataset.color].name}`);
+      });
+    });
+  }
+
+  /* =======================================================
+     8. Обработчики кликов и полей (делегирование)
+     ======================================================= */
+  els.roles.addEventListener('click', (e) => {
+    if (suppressClick) return;
+    if (e.target.closest('#btnAddRole')) { openAddRole(); return; }
+    const card = e.target.closest('[data-role-id]');
+    if (card) openRoleInfo(card.dataset.roleId);
+  });
+
+  els.board.addEventListener('click', (e) => {
+    if (suppressClick) return;
+    if (e.target.closest('#addToken')) { openAddToken(); return; }
+    const tokEl = e.target.closest('[data-token-id]');
+    if (tokEl) openTokenMenu(tokEl.dataset.tokenId);
+  });
+  els.board.addEventListener('keydown', (e) => {
+    const tokEl = e.target.closest('[data-token-id]');
+    if (tokEl && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openTokenMenu(tokEl.dataset.tokenId); }
+  });
+
+  els.ratings.addEventListener('click', (e) => {
+    if (suppressClick) return;
+    const mini = e.target.closest('[data-token-id]');
+    if (mini) openTokenMenu(mini.dataset.tokenId);
+  });
+
+  // Редактируемый список «Всего персонажей по профессии»
+  els.countList.addEventListener('input', (e) => {
+    const row = e.target.closest('.count-row');
+    const item = row && state.counts.find(c => c.id === row.dataset.id);
+    if (!item) return;
+    if (e.target.dataset.field === 'name') item.name = e.target.value;
+    if (e.target.dataset.field === 'count') item.count = Math.max(0, parseInt(e.target.value, 10) || 0);
+    save(); updateCountTotal();
+  });
+  els.countList.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b) return;
+    const row = b.closest('.count-row');
+    const item = state.counts.find(c => c.id === row.dataset.id);
+    if (!item) return;
+    if (b.dataset.act === 'inc') item.count = (Number(item.count) || 0) + 1;
+    if (b.dataset.act === 'dec') item.count = Math.max(0, (Number(item.count) || 0) - 1);
+    if (b.dataset.act === 'del') state.counts = state.counts.filter(c => c !== item);
+    save(); renderCounts();
+  });
+  $('#btnAddCount').addEventListener('click', () => {
+    state.counts.push({ id: uid(), name: '', count: 1 });
+    save(); renderCounts();
+    const inputs = els.countList.querySelectorAll('.cnt-name');
+    inputs[inputs.length - 1].focus();
+  });
+
+  // Шапка: новый раунд (чистим метки) и полный сброс
+  $('#btnClearMarks').addEventListener('click', () => {
+    if (!confirm('Новый раунд: снять смерти, оценки, профессии и заметки со всех персонажей? Список профессий и счётчики останутся.')) return;
+    state.tokens.forEach(t => Object.assign(t, { dead: false, corpse: emptyCorpse(), roles: [], rating: null, ratingLabel: '', note: '' }));
+    commit(); toast('Метки очищены');
+  });
+  $('#btnReset').addEventListener('click', () => {
+    if (!confirm('Сбросить всю доску к исходному состоянию? Все данные будут удалены.')) return;
+    localStorage.removeItem(STORAGE_KEY);
+    state = defaultState();
+    commit(); toast('Доска сброшена');
+  });
+
+  /* =======================================================
+     9. Старт
+     ======================================================= */
+  renderAll();
+  // Для отладки из консоли: window.__board.state
+  window.__board = { get state() { return state; } };
+})();
+</script>
+</body>
+</html>
